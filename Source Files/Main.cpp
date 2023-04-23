@@ -4,7 +4,6 @@ struct Buffers
 {
 	unsigned int VBO;
 	unsigned int VAO;
-	unsigned int EBO;
 };
 
 // Time Variables
@@ -23,9 +22,18 @@ int main()
 
 	// Generate Circle Vertices
 	
-	Buffers circleBuffers {0, 0, 0};
+	//Buffers circleBuffers {0, 0};
+
+	const int num_segments = 360;
+	const float radius = 0.25;
 	
-	genBuffers(circleBuffers.VBO, circleBuffers.VAO);
+	std::vector<float> circleVertices;
+
+	glBufferData(GL_ARRAY_BUFFER, circleVertices.size() * sizeof(float), circleVertices.data(), GL_STATIC_DRAW);
+
+	const int number_of_elements_per_line = 2;
+
+	configureBufferAttributes(3, 3, 2, 3, number_of_elements_per_line);
 
 	while (!glfwWindowShouldClose(window))
 	{
@@ -43,12 +51,11 @@ int main()
 
 		circleShader.setFloat("time", timeValue);
 
-		drawVertices(circleBuffers.VAO, 6);
+		draw_filled_circle(glm::vec2 (sin(timeValue) * 0.5, cos(timeValue) * 0.5), num_segments, sin(timeValue) * 0.5);
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
-
 	glfwTerminate();
 	return 0;
 }
@@ -155,46 +162,8 @@ void processInput(GLFWwindow* window)
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
+	// Set the viewport to cover the entire new window size
 	glViewport(0, 0, width, height);
-
-	return;
-}
-
-void genBuffers(unsigned int& VBO, unsigned int& VAO)
-{
-	float vertices[] = {
-		//  X     Y     Z      R      G      B
-		//   POSITIONS             COLOR
-		+0.5f, +0.5f, +0.0f, +0.0f, +0.0f, +1.0f, // top right
-		-0.5f, +0.5f, +0.0f, +1.0f, +0.0f, +0.0f, // top left
-		-0.5f, -0.5f, +0.0f, +0.0f, +1.0f, +0.0f, // bottom left 
-
-		+0.5f, +0.5f, +0.0f, +0.0f, +0.0f, +1.0f, // top right
-		-0.5f, -0.5f, +0.0f, +0.0f, +1.0f, +0.0f, // bottom left
-		+0.5f, -0.5f, +0.0f, +1.0f, +0.0f, +0.0f, // bottom right
-	};
-
-	//VBO vertex buffer object, deals with verticies
-
-	glGenBuffers(1, &VBO);
-
-	//EBO element buffer object, deals with indices
-
-	glGenVertexArrays(1, &VAO);
-	// 1. bind Vertex Array Object
-	glBindVertexArray(VAO);
-	// 2. copy our vertices array in a vertex buffer for OpenGL to use
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-	// 3. copy our index array in a element buffer for OpenGL to use
-	// 
-	// 4. then set the vertex attributes pointers
-	// position attribute
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-	// color attribute
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-	glEnableVertexAttribArray(1);
 
 	return;
 }
@@ -210,7 +179,85 @@ void drawVertices(unsigned int& VAO, int verts)
 	return;
 }
 
-void generateCircleVertices(glm::vec3 centerPoint, float radius)
+void draw_filled_circle(glm::vec2 center, int num_segments, float radius)
 {
+	std::vector<float> vertices;
+	generate_circle_vertices(center, vertices, num_segments, radius);
 
+	// Bind buffers
+	GLuint VBO;
+	glGenBuffers(1, &VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), &vertices[0], GL_STATIC_DRAW);
+
+	GLuint VAO;
+	glGenVertexArrays(1, &VAO);
+	glBindVertexArray(VAO);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+
+	// Draw triangles to fill the circle
+	glDrawArrays(GL_TRIANGLE_FAN, 0, vertices.size() / 2);
+
+	// Cleanup
+	glDeleteBuffers(1, &VBO);
+	glDeleteVertexArrays(1, &VAO);
+	return;
+}
+
+void generate_circle_vertices(glm::vec2 center, std::vector<float>& vertices, int num_segments, float radius) {
+	vertices.clear();
+	float theta = TAU / static_cast<float>(num_segments);
+	float cos_theta = cosf(theta);
+	float sin_theta = sinf(theta);
+	float x = radius; // start at (radius, 0)
+	float y = 0.0f;
+	for (int i = 0; i < num_segments; ++i) {
+		// add the vertex (x, y) to the list of vertices
+		vertices.push_back(center.x + x);
+		vertices.push_back(center.y + y);
+
+		// apply the rotation matrix to (x, y)
+		float new_x = cos_theta * x - sin_theta * y;
+		float new_y = sin_theta * x + cos_theta * y;
+		x = new_x;
+		y = new_y;
+	}
+	// add the last vertex (which is the same as the first one)
+	vertices.push_back(center.x + radius);
+	vertices.push_back(center.y);
+}
+
+void configureBufferAttributes(const unsigned int& position, const unsigned  int& color, const unsigned int& texture, const unsigned int& normal, const unsigned int& number_of_elements_per_line)
+{
+	// TODO: redo this method better
+	int offset = 0;
+	if (position != NULL)
+	{
+		// Position attribute
+		glVertexAttribPointer(0, position, GL_FLOAT, GL_FALSE, number_of_elements_per_line * sizeof(float), (void*)(offset * sizeof(float)));
+		glEnableVertexAttribArray(0);
+		offset += position;
+	}
+	if (color != NULL)
+	{
+		// Color attributoffset
+		glVertexAttribPointer(1, color, GL_FLOAT, GL_FALSE, number_of_elements_per_line * sizeof(float), (void*)(offset * sizeof(float)));
+		glEnableVertexAttribArray(1);
+		offset += color;
+	}
+	if (texture != NULL)
+	{
+		// Texture Attribute
+		glVertexAttribPointer(2, texture, GL_FLOAT, GL_FALSE, number_of_elements_per_line * sizeof(float), (void*)(offset * sizeof(float)));
+		glEnableVertexAttribArray(2);
+		offset += texture;
+	}
+	if (normal != NULL)
+	{
+		// Normal Attribute
+		glVertexAttribPointer(3, normal, GL_FLOAT, GL_FALSE, number_of_elements_per_line * sizeof(float), (void*)(offset * sizeof(float)));
+		glEnableVertexAttribArray(3);
+		offset += normal;
+	}
 }
